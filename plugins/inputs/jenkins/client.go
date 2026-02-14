@@ -132,7 +132,7 @@ func (c *client) getJobs(ctx context.Context, jr *jobRequest) (js *jobResponse, 
 	js = new(jobResponse)
 	url := jobPath
 	if jr != nil {
-		url = jr.url()
+		url = jr.url() + "?tree=builds[number,url]{0,20},lastBuild[number,url],jobs[name,url,color],name"
 	}
 	err = c.doGet(ctx, url, js)
 	return js, err

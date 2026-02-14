@@ -307,7 +307,8 @@ func (j *Jenkins) getJobDetail(jr jobRequest, acc telegraf.Accumulator) error {
 
 		build, err := j.client.getBuild(context.Background(), jr, jb.Number)
 		if err != nil {
-			return err
+			acc.AddError(err)
+			continue
 		}
 
 		if build.Building {
@@ -316,7 +317,7 @@ func (j *Jenkins) getJobDetail(jr jobRequest, acc telegraf.Accumulator) error {
 		}
 
 		if build.getTimestamp().Before(cutoff) {
-			break // builds are newest-first, so all remaining are older
+			continue
 		}
 
 		j.gatherJobBuild(jr, build, acc)
