@@ -886,6 +886,75 @@ func TestGatherJobsMultipleBuilds(t *testing.T) {
 				),
 			},
 		},
+		{
+			name: "build older than MaxBuildAge stops iteration",
+			response: map[string]interface{}{
+				"/api/json": &jobResponse{
+					Jobs: []innerJob{
+						{Name: "pipeline"},
+					},
+				},
+				"/computer/api/json": nodeResponse{},
+				"/job/pipeline/api/json": &jobResponse{
+					Builds: []jobBuild{{Number: 3}, {Number: 2}, {Number: 1}},
+					LastBuild: jobBuild{
+						Number: 3,
+					},
+				},
+				"/job/pipeline/3/api/json": &buildResponse{
+					Building:  false,
+					Result:    "SUCCESS",
+					Duration:  10000,
+					Number:    3,
+					Timestamp: (time.Now().Unix() - int64(time.Minute.Seconds())) * 1000,
+				},
+				"/job/pipeline/2/api/json": &buildResponse{
+					Building:  false,
+					Result:    "SUCCESS",
+					Duration:  20000,
+					Number:    2,
+					Timestamp: (time.Now().Unix() - int64((2 * time.Hour).Seconds())) * 1000,
+				},
+				// Build 1 should never be fetched because build 2 is already too old
+				"/job/pipeline/1/api/json": &buildResponse{
+					Building:  false,
+					Result:    "SUCCESS",
+					Duration:  30000,
+					Number:    1,
+					Timestamp: (time.Now().Unix() - int64((3 * time.Hour).Seconds())) * 1000,
+				},
+			},
+			expected: []telegraf.Metric{
+				metric.New(
+					"jenkins",
+					map[string]string{
+						"source": "127.0.0.1",
+						"port":   "",
+					},
+					map[string]interface{}{
+						"busy_executors":  0,
+						"total_executors": 0,
+					},
+					time.Unix(0, 0),
+				),
+				metric.New(
+					"jenkins_job",
+					map[string]string{
+						"source":  "127.0.0.1",
+						"port":    "",
+						"name":    "pipeline",
+						"result":  "SUCCESS",
+						"parents": "",
+					},
+					map[string]interface{}{
+						"duration":    int64(10000),
+						"number":      int64(3),
+						"result_code": 0,
+					},
+					time.Unix(0, 0),
+				),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
