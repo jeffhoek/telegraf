@@ -955,6 +955,58 @@ func TestGatherJobsMultipleBuilds(t *testing.T) {
 				),
 			},
 		},
+		{
+			name: "empty Builds with valid LastBuild uses fallback",
+			response: map[string]interface{}{
+				"/api/json": &jobResponse{
+					Jobs: []innerJob{
+						{Name: "pipeline"},
+					},
+				},
+				"/computer/api/json": nodeResponse{},
+				"/job/pipeline/api/json": &jobResponse{
+					Builds:    []jobBuild{},
+					LastBuild: jobBuild{Number: 5},
+				},
+				"/job/pipeline/5/api/json": &buildResponse{
+					Building:  false,
+					Result:    "SUCCESS",
+					Duration:  12000,
+					Number:    5,
+					Timestamp: (time.Now().Unix() - int64(time.Minute.Seconds())) * 1000,
+				},
+			},
+			expected: []telegraf.Metric{
+				metric.New(
+					"jenkins",
+					map[string]string{
+						"source": "127.0.0.1",
+						"port":   "",
+					},
+					map[string]interface{}{
+						"busy_executors":  0,
+						"total_executors": 0,
+					},
+					time.Unix(0, 0),
+				),
+				metric.New(
+					"jenkins_job",
+					map[string]string{
+						"source":  "127.0.0.1",
+						"port":    "",
+						"name":    "pipeline",
+						"result":  "SUCCESS",
+						"parents": "",
+					},
+					map[string]interface{}{
+						"duration":    int64(12000),
+						"number":      int64(5),
+						"result_code": 0,
+					},
+					time.Unix(0, 0),
+				),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
