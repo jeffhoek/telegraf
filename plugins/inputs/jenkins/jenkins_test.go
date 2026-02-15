@@ -1007,6 +1007,35 @@ func TestGatherJobsMultipleBuilds(t *testing.T) {
 				),
 			},
 		},
+		{
+			name: "empty Builds with LastBuild number less than 1 produces no job metrics",
+			response: map[string]interface{}{
+				"/api/json": &jobResponse{
+					Jobs: []innerJob{
+						{Name: "pipeline"},
+					},
+				},
+				"/computer/api/json": nodeResponse{},
+				"/job/pipeline/api/json": &jobResponse{
+					Builds:    []jobBuild{},
+					LastBuild: jobBuild{Number: 0},
+				},
+			},
+			expected: []telegraf.Metric{
+				metric.New(
+					"jenkins",
+					map[string]string{
+						"source": "127.0.0.1",
+						"port":   "",
+					},
+					map[string]interface{}{
+						"busy_executors":  0,
+						"total_executors": 0,
+					},
+					time.Unix(0, 0),
+				),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
