@@ -30,6 +30,6 @@ In `jenkins.go:309-311`, a single `getBuild()` failure aborts the entire job and
 
 `TestGatherJobsMultipleBuilds` only covers the happy path of multiple completed builds. Several important code paths are untested.
 
-- [ ] Add test cases: a running build (should be skipped), a build older than `MaxBuildAge` (should stop iteration), empty `Builds` with valid `LastBuild` (fallback path), and empty `Builds` with `LastBuild.Number < 1` (no builds)
+- [x] Add test cases: a running build (should be skipped), a build older than `MaxBuildAge` (should stop iteration), empty `Builds` with valid `LastBuild` (fallback path), and empty `Builds` with `LastBuild.Number < 1` (no builds)
 - [ ] Verify existing code handles each case correctly; fix any issues found
 - [ ] Run tests and confirm all edge cases pass
