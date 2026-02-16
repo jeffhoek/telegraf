@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,7 +109,7 @@ type mockHandler struct {
 }
 
 func (h mockHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	o, ok := h.responseMap[r.URL.RequestURI()]
+	o, ok := h.responseMap[r.URL.EscapedPath()]
 	if !ok {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -230,7 +231,7 @@ func TestGatherFail(t *testing.T) {
 					},
 				},
 			},
-			expected: "[/job/job1/api/json] 404 Not Found",
+			expected: "404 Not Found",
 		},
 		{
 			name: "bad build info",
@@ -255,7 +256,7 @@ func TestGatherFail(t *testing.T) {
 			// Setup test server
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Lookup the response using the URI
-				response, ok := tt.response[r.URL.RequestURI()]
+				response, ok := tt.response[r.URL.EscapedPath()]
 				if !ok {
 					w.WriteHeader(http.StatusNotFound)
 					return
@@ -543,7 +544,7 @@ func TestGatherNodeData(t *testing.T) {
 			// Setup test server
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Lookup the response using the URI
-				response, ok := tt.response[r.URL.RequestURI()]
+				response, ok := tt.response[r.URL.EscapedPath()]
 				if !ok {
 					w.WriteHeader(http.StatusNotFound)
 					return
@@ -672,7 +673,7 @@ func TestGatherLabels(t *testing.T) {
 	// Setup test server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Lookup the response using the URI
-		response, ok := response[r.URL.RequestURI()]
+		response, ok := response[r.URL.EscapedPath()]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -727,7 +728,7 @@ func gatherJobBuildsHelper(t *testing.T, response map[string]interface{}, expect
 
 	// Setup test server
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		resp, ok := response[r.URL.RequestURI()]
+		resp, ok := response[r.URL.EscapedPath()]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
 			return
@@ -1097,6 +1098,82 @@ func TestGatherNoBuildWhenLastBuildInvalid(t *testing.T) {
 	}
 
 	gatherJobBuildsHelper(t, response, expected)
+}
+
+func TestGatherBuildsCappedAt20(t *testing.T) {
+	// A job has 25 builds, all within MaxBuildAge.
+	// The plugin should fetch at most 20 build details,
+	// because getJobs should use a tree parameter to limit
+	// the builds array returned by Jenkins.
+	const totalBuilds = 25
+	const maxExpectedFetches = 20
+
+	now := time.Now()
+
+	// Build the job response with 25 builds (newest-first)
+	builds := make([]jobBuild, totalBuilds)
+	for i := 0; i < totalBuilds; i++ {
+		builds[i] = jobBuild{Number: int64(totalBuilds - i)}
+	}
+
+	// Track how many build-detail requests are made
+	var buildFetchCount int
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.EscapedPath()
+		var resp interface{}
+
+		switch {
+		case path == "/" || path == "/api/json":
+			resp = &jobResponse{
+				Jobs: []innerJob{{Name: "pipeline"}},
+			}
+		case path == "/computer/api/json":
+			resp = &nodeResponse{}
+		case path == "/job/pipeline/api/json":
+			// Simulate Jenkins honoring the tree parameter:
+			// when the request includes tree=...{0,20}, return only 20 builds.
+			buildsToReturn := builds
+			if strings.Contains(r.URL.RawQuery, "tree=") && len(buildsToReturn) > maxExpectedFetches {
+				buildsToReturn = buildsToReturn[:maxExpectedFetches]
+			}
+			resp = &jobResponse{
+				Builds:    buildsToReturn,
+				LastBuild: jobBuild{Number: int64(totalBuilds)},
+			}
+		default:
+			// Must be a build detail request like /job/pipeline/<N>/api/json
+			buildFetchCount++
+			resp = &buildResponse{
+				Building:  false,
+				Result:    "SUCCESS",
+				Duration:  10000,
+				Number:    1,
+				Timestamp: (now.Unix() - int64(time.Minute.Seconds())) * 1000,
+			}
+		}
+
+		buf, err := json.Marshal(resp)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Write(buf) //nolint:errcheck
+	}))
+	defer ts.Close()
+
+	plugin := &Jenkins{
+		URL:             ts.URL,
+		MaxBuildAge:     config.Duration(time.Hour),
+		ResponseTimeout: config.Duration(time.Second),
+		Log:             testutil.Logger{},
+	}
+
+	var acc testutil.Accumulator
+	require.NoError(t, acc.GatherError(plugin.Gather))
+
+	require.LessOrEqual(t, buildFetchCount, maxExpectedFetches,
+		"expected at most %d build fetches but got %d", maxExpectedFetches, buildFetchCount)
 }
 
 func TestGatherJobs(t *testing.T) {
@@ -1600,10 +1677,10 @@ func TestGatherJobs(t *testing.T) {
 			// Setup test server
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				// Lookup the response using the URI
-				response, ok := tt.response[r.URL.RequestURI()]
+				response, ok := tt.response[r.URL.EscapedPath()]
 				if !ok {
 					// Shortcut unrelated endpoints
-					if r.URL.RequestURI() != "/computer/api/json" {
+					if r.URL.EscapedPath() != "/computer/api/json" {
 						w.WriteHeader(http.StatusNotFound)
 						return
 					}
