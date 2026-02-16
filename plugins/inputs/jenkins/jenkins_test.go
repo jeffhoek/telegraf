@@ -1100,6 +1100,134 @@ func TestGatherNoBuildWhenLastBuildInvalid(t *testing.T) {
 	gatherJobBuildsHelper(t, response, expected)
 }
 
+func TestGatherBuildFetchErrorPartial(t *testing.T) {
+	// Build 2 returns an HTTP error, but builds 1 and 3 succeed.
+	// Metrics should still be emitted for the successful builds,
+	// and the error should be recorded via acc.AddError.
+	response := map[string]interface{}{
+		"/api/json": &jobResponse{
+			Jobs: []innerJob{
+				{Name: "pipeline"},
+			},
+		},
+		"/computer/api/json": nodeResponse{},
+		"/job/pipeline/api/json": &jobResponse{
+			Builds:    []jobBuild{{Number: 3}, {Number: 2}, {Number: 1}},
+			LastBuild: jobBuild{Number: 3},
+		},
+		// Build 2 is deliberately missing from responses, causing a 404
+		"/job/pipeline/1/api/json": &buildResponse{
+			Building:  false,
+			Result:    "SUCCESS",
+			Duration:  10000,
+			Number:    1,
+			Timestamp: (time.Now().Unix() - int64(time.Minute.Seconds())) * 1000,
+		},
+		"/job/pipeline/3/api/json": &buildResponse{
+			Building:  false,
+			Result:    "SUCCESS",
+			Duration:  30000,
+			Number:    3,
+			Timestamp: (time.Now().Unix() - int64(time.Minute.Seconds())) * 1000,
+		},
+	}
+
+	expected := []telegraf.Metric{
+		metric.New(
+			"jenkins",
+			map[string]string{
+				"source": "127.0.0.1",
+				"port":   "",
+			},
+			map[string]interface{}{
+				"busy_executors":  0,
+				"total_executors": 0,
+			},
+			time.Unix(0, 0),
+		),
+		metric.New(
+			"jenkins_job",
+			map[string]string{
+				"source":  "127.0.0.1",
+				"port":    "",
+				"name":    "pipeline",
+				"result":  "SUCCESS",
+				"parents": "",
+			},
+			map[string]interface{}{
+				"duration":    int64(10000),
+				"number":      int64(1),
+				"result_code": 0,
+			},
+			time.Unix(0, 0),
+		),
+		metric.New(
+			"jenkins_job",
+			map[string]string{
+				"source":  "127.0.0.1",
+				"port":    "",
+				"name":    "pipeline",
+				"result":  "SUCCESS",
+				"parents": "",
+			},
+			map[string]interface{}{
+				"duration":    int64(30000),
+				"number":      int64(3),
+				"result_code": 0,
+			},
+			time.Unix(0, 0),
+		),
+	}
+
+	// Setup test server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp, ok := response[r.URL.EscapedPath()]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		buf, err := json.Marshal(resp)
+		if err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if len(buf) == 0 {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		if _, err := w.Write(buf); err != nil {
+			t.Logf("writing failed: %v", err)
+			t.Fail()
+		}
+	}))
+	defer ts.Close()
+
+	plugin := &Jenkins{
+		URL:             ts.URL,
+		MaxBuildAge:     config.Duration(time.Hour),
+		ResponseTimeout: config.Duration(time.Second),
+		Log:             testutil.Logger{},
+	}
+
+	var acc testutil.Accumulator
+	require.NoError(t, plugin.Gather(&acc))
+
+	// Should have recorded an error for the failed build fetch
+	require.Len(t, acc.Errors, 1)
+	require.Contains(t, acc.Errors[0].Error(), "404")
+
+	// Metrics for the two successful builds should still be present
+	options := []cmp.Option{
+		testutil.IgnoreTime(),
+		testutil.SortMetrics(),
+		testutil.IgnoreTags("port"),
+	}
+	actual := acc.GetTelegrafMetrics()
+	testutil.RequireMetricsEqual(t, expected, actual, options...)
+}
+
 func TestGatherBuildsCappedAt20(t *testing.T) {
 	// A job has 25 builds, all within MaxBuildAge.
 	// The plugin should fetch at most 20 build details,

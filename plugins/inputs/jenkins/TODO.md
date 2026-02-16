@@ -14,9 +14,9 @@ The loop in `getJobDetail` iterates over `js.Builds` and makes a `getBuild()` HT
 
 In `jenkins.go:309-311`, a single `getBuild()` failure aborts the entire job and no metrics are emitted for any builds. This is inconsistent with sub-job error handling at line 282 which uses `acc.AddError`.
 
-- [ ] Write a test where one `getBuild()` call returns an error but other builds succeed, and assert metrics are still emitted for the successful builds
-- [ ] Replace `return err` with `acc.AddError(err)` and `continue` so remaining builds are still processed
-- [ ] Run tests and confirm partial failures no longer drop all metrics for the job
+- [x] Write a test where one `getBuild()` call returns an error but other builds succeed, and assert metrics are still emitted for the successful builds
+- [x] Replace `return err` with `acc.AddError(err)` and `continue` so remaining builds are still processed
+- [x] Run tests and confirm partial failures no longer drop all metrics for the job
 
 ## 3. Validate newest-first ordering assumption
 
