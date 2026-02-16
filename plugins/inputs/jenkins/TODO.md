@@ -6,9 +6,9 @@ Fixes for `fix: inputs.jenkins: Report all concurrent builds` (commit 8d89a81)
 
 The loop in `getJobDetail` iterates over `js.Builds` and makes a `getBuild()` HTTP call per entry. Jenkins returns all historical builds by default, so for jobs with thousands of builds this fires unbounded HTTP requests until one exceeds `MaxBuildAge`. A hardcoded cap of ~20 via the `tree` parameter is sufficient since `MaxBuildAge` remains the user-facing control.
 
-- [ ] Write a test with a job that has more than 20 builds to verify only the capped number of builds are fetched
-- [ ] Add `tree=builds[number]{0,20}` to the `getJobs` API call so Jenkins limits the `builds` array server-side
-- [ ] Run tests and confirm the build count is bounded
+- [x] Write a test with a job that has more than 20 builds to verify only the capped number of builds are fetched
+- [x] Add `tree=builds[number]{0,20}` to the `getJobs` API call so Jenkins limits the `builds` array server-side
+- [x] Run tests and confirm the build count is bounded
 
 ## 2. Improve error resilience in build fetch loop
 
@@ -31,5 +31,5 @@ In `jenkins.go:309-311`, a single `getBuild()` failure aborts the entire job and
 `TestGatherJobsMultipleBuilds` only covers the happy path of multiple completed builds. Several important code paths are untested.
 
 - [x] Add test cases: a running build (should be skipped), a build older than `MaxBuildAge` (should stop iteration), empty `Builds` with valid `LastBuild` (fallback path), and empty `Builds` with `LastBuild.Number < 1` (no builds)
-- [ ] Verify existing code handles each case correctly; fix any issues found
-- [ ] Run tests and confirm all edge cases pass
+- [x] Verify existing code handles each case correctly; fix any issues found
+- [x] Run tests and confirm all edge cases pass
