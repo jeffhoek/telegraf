@@ -1100,6 +1100,97 @@ func TestGatherNoBuildWhenLastBuildInvalid(t *testing.T) {
 	gatherJobBuildsHelper(t, response, expected)
 }
 
+func TestGatherOldBuildAmongNewBuilds(t *testing.T) {
+	// Build 2 is older than MaxBuildAge but builds 1 and 3 are recent.
+	// All valid builds should still be reported even if an old build
+	// appears between newer ones (i.e. non-descending order).
+	twoHoursAgo := (time.Now().Unix() - int64((2 * time.Hour).Seconds())) * 1000
+	oneMinAgo := (time.Now().Unix() - int64(time.Minute.Seconds())) * 1000
+
+	response := map[string]interface{}{
+		"/api/json": &jobResponse{
+			Jobs: []innerJob{
+				{Name: "pipeline"},
+			},
+		},
+		"/computer/api/json": nodeResponse{},
+		"/job/pipeline/api/json": &jobResponse{
+			Builds:    []jobBuild{{Number: 3}, {Number: 2}, {Number: 1}},
+			LastBuild: jobBuild{Number: 3},
+		},
+		"/job/pipeline/1/api/json": &buildResponse{
+			Building:  false,
+			Result:    "SUCCESS",
+			Duration:  10000,
+			Number:    1,
+			Timestamp: oneMinAgo,
+		},
+		"/job/pipeline/2/api/json": &buildResponse{
+			Building:  false,
+			Result:    "SUCCESS",
+			Duration:  20000,
+			Number:    2,
+			Timestamp: twoHoursAgo,
+		},
+		"/job/pipeline/3/api/json": &buildResponse{
+			Building:  false,
+			Result:    "SUCCESS",
+			Duration:  30000,
+			Number:    3,
+			Timestamp: oneMinAgo,
+		},
+	}
+
+	expected := []telegraf.Metric{
+		metric.New(
+			"jenkins",
+			map[string]string{
+				"source": "127.0.0.1",
+				"port":   "",
+			},
+			map[string]interface{}{
+				"busy_executors":  0,
+				"total_executors": 0,
+			},
+			time.Unix(0, 0),
+		),
+		metric.New(
+			"jenkins_job",
+			map[string]string{
+				"source":  "127.0.0.1",
+				"port":    "",
+				"name":    "pipeline",
+				"result":  "SUCCESS",
+				"parents": "",
+			},
+			map[string]interface{}{
+				"duration":    int64(10000),
+				"number":      int64(1),
+				"result_code": 0,
+			},
+			time.Unix(0, 0),
+		),
+		metric.New(
+			"jenkins_job",
+			map[string]string{
+				"source":  "127.0.0.1",
+				"port":    "",
+				"name":    "pipeline",
+				"result":  "SUCCESS",
+				"parents": "",
+			},
+			map[string]interface{}{
+				"duration":    int64(30000),
+				"number":      int64(3),
+				"result_code": 0,
+			},
+			time.Unix(0, 0),
+		),
+	}
+
+	gatherJobBuildsHelper(t, response, expected)
+}
+
 func TestGatherBuildFetchErrorPartial(t *testing.T) {
 	// Build 2 returns an HTTP error, but builds 1 and 3 succeed.
 	// Metrics should still be emitted for the successful builds,

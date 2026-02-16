@@ -22,9 +22,9 @@ In `jenkins.go:309-311`, a single `getBuild()` failure aborts the entire job and
 
 `jenkins.go:319` uses `break` assuming builds are newest-first, meaning a single out-of-order build would silently drop all subsequent builds. The invariant is not enforced in code.
 
-- [ ] Write a test with builds in non-descending order and assert all valid builds within `MaxBuildAge` are reported
-- [ ] Sort the builds slice by number descending before iterating to guarantee the newest-first invariant
-- [ ] Run tests and confirm out-of-order builds are handled correctly
+- [x] Write a test with builds in non-descending order and assert all valid builds within `MaxBuildAge` are reported
+- [x] ~~Sort the builds slice~~ Not needed — builds are capped at 20 via `tree` parameter; changed `break` to `continue` so out-of-order old builds are skipped instead of aborting iteration
+- [x] Run tests and confirm out-of-order builds are handled correctly
 
 ## 4. Add test coverage for edge cases
 

@@ -317,7 +317,7 @@ func (j *Jenkins) getJobDetail(jr jobRequest, acc telegraf.Accumulator) error {
 		}
 
 		if build.getTimestamp().Before(cutoff) {
-			break // builds are newest-first, so all remaining are older
+			continue
 		}
 
 		j.gatherJobBuild(jr, build, acc)
